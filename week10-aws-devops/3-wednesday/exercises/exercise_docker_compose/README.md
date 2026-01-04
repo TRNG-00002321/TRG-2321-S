@@ -66,6 +66,49 @@ Create a `docker-compose.yml` file in the `starter_code/` directory with the fol
 **Don't forget:**
 - Define the `postgres-data` volume at the bottom of the file
 
+#### Reference Solution: docker-compose.yml
+
+Create a file named `docker-compose.yml` in the `starter_code/` directory with the following content:
+
+```yaml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: taskpass
+      POSTGRES_DB: taskdb
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build: ./app
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://taskuser:taskpass@db:5432/taskdb
+      FLASK_ENV: development
+    volumes:
+      - ./app:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: flask run --host=0.0.0.0 --reload
+
+volumes:
+  postgres-data:
+```
+
+> **Note:** This `docker-compose.yml` file defines two services (`db` and `web`), configures health checks for proper startup order, and creates a named volume for database persistence.
+
 ### Task 3: Launch and Test (30 min)
 
 1. **Start the stack:**
