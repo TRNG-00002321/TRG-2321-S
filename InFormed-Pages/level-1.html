@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+    <head></head>
+    <body>
+
+        <h1>Enter the randomly generated name below into the input and click the submit button</h1>
+        <h2>Name to input</h2>
+        <p id="randomString"></p>
+
+        <form>
+            <input id="nameInput" type="text" required placeholder="match from random name"/>
+            <button>Submit</button>
+        </form>
+
+    </body>
+    <script>
+        const start = Date.now();
+        const rando = Math.random();
+
+        document.getElementById("randomString").innerText = `Joe-${rando}`
+        const nameInput = document.getElementById("nameInput")
+
+        document.addEventListener("submit", function(event){
+            event.preventDefault();
+            const time = Date.now() - start;
+            if(nameInput.value === `Joe-${rando}`){
+                alert(`SUCCESS!!! Time: ${time} milliseconds from page load`)
+            }else{
+                alert("FAILURE!!! Input value does not equal Name to input")
+            }
+            
+            
+        });
+    
+    </script>
+</html>

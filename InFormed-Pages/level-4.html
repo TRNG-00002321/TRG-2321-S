@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+    <head>
+
+    </head>
+    <body>
+        <h1>Enter a value that is at least 100 characters long then click the submit button</h1>
+        <form >
+        
+        <input type="text" placeholder="must be at least 100 characters long mwah haha" minlength="100" >
+
+        <button>Submit</button>
+    </form>
+    </body>
+    <script>
+        const start = Date.now();
+        const inputs = document.getElementsByTagName("input");
+
+        document.addEventListener("input", function(event){
+            alert("Laughs in evil")
+        })
+
+        document.addEventListener("submit", function (event){
+            event.preventDefault();
+            const time = Date.now() - start;
+            alert(`SUCCESS!!! Time: ${time} milliseconds from page load`)
+        })
+    </script>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+    <head>
+
+    </head>
+    <body>
+        <h1>Enter any value into the text box. It will appear sometime between 30-60 seconds after the page loads</h1>
+        <form>        
+            <input type="submit">
+        </form>
+    </body>
+    <script>
+        let start = Date.now();
+        const inputs = document.getElementsByTagName("input");
+        const timeout = (Math.floor(Math.random()*30) + 30) * 1000;
+        setTimeout(()=>{
+            const input= document.createElement("input");
+            input.type = "text";
+            input.placeholder = "ready for text!";     
+            input.id = "textContainer"      
+            document.addEventListener("submit", function (event){
+                event.preventDefault();
+                if(document.querySelector("#textContainer").value){
+                    const time = Date.now() - start;
+                    alert(`SUCCESS!!! Time: ${time} milliseconds from page load`)                    
+                }
+            });
+            start = Date.now();
+            document.querySelector("form").appendChild(input); 
+        },timeout);
+    </script>
+</html>
