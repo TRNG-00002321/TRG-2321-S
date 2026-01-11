@@ -5,23 +5,43 @@
 - Understand different mathematical definitions of fairness
 - Calculate and interpret key fairness metrics
 - Recognize trade-offs between different fairness criteria
-- Choose appropriate fairness metrics for different contexts
+- Choose appropriate metrics for different contexts
 - Implement fairness metrics in testing workflows
-- Report fairness results effectively to stakeholders
+- Communicate fairness results to stakeholders
 
 ## Why This Matters
 
 *"Intelligent Engineering: Harnessing AI for Enhanced Testing and Quality Assurance"*
 
-"Is this AI fair?" seems like a simple question, but it opens a Pandora's box of complexity. Fairness isn't a single concept—it's a family of related but distinct mathematical criteria, many of which are mutually incompatible. You literally cannot satisfy all fairness definitions simultaneously.
+When you tell a room full of people to build a "fair" AI system, you'll get different interpretations. One person thinks fairness means equal approval rates across groups. Another thinks it means equal accuracy. A third thinks it means treating similar individuals similarly regardless of group membership.
 
-For quality engineers, understanding these metrics is crucial. Without quantitative fairness measures, claims of fairness are just opinions. With them, you can objectively assess whether a model meets fairness requirements, compare different models, track fairness over time, and demonstrate compliance to regulators. This module equips you with the mathematical and practical tools to measure what matters.
+**Here's the problem: These definitions are mathematically incompatible.** You usually can't satisfy all of them at once. Teams must choose which definition matters most for their context—and that choice has real consequences.
+
+Understanding fairness metrics isn't just academic. Regulators are increasingly requiring fairness assessments. Lawsuits are being filed over algorithmic discrimination. As a quality engineer, you need to know what you're measuring, what it means, and why trade-offs exist.
 
 ## The Concept
 
 ### Why Multiple Fairness Metrics Exist
 
 Different stakeholders care about different aspects of fairness:
+
+**The Applicant's Perspective:**
+"I should get the same decision as someone with my qualifications from a different demographic group."
+→ Focuses on **individual fairness** and **equalized odds**
+
+**The Lender's Perspective:**
+"When I approve a loan, I need it to be equally likely to be repaid regardless of who the borrower is."
+→ Focuses on **predictive parity**
+
+**The Regulator's Perspective:**
+"Outcomes shouldn't systematically differ by protected class."
+→ Focuses on **demographic parity** and **disparate impact**
+
+**The Civil Rights Perspective:**
+"Historical discrimination means equal treatment today doesn't produce equal outcomes. We need affirmative action."
+→ Focuses on **demographic parity** even if qualifications differ
+
+Each perspective leads to different mathematical definitions of fairness.
 
 ```
 Stakeholder Perspectives:
@@ -49,724 +69,262 @@ Stakeholder Perspectives:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Core Fairness Metrics
+### The Main Fairness Metrics
+
+Let's walk through each major metric with clear explanations and examples.
 
 #### 1. Demographic Parity (Statistical Parity)
 
-**Definition:** The probability of a positive prediction should be equal across groups.
+**The idea:** The percentage of positive outcomes should be equal across groups.
 
-```
-Mathematical Definition:
-P(Ŷ = 1 | A = 0) = P(Ŷ = 1 | A = 1)
+**Mathematical definition:** P(Positive Prediction | Group A) = P(Positive Prediction | Group B)
 
-Where:
-• Ŷ = Predicted outcome (0 or 1)
-• A = Protected attribute (group membership)
+**In plain English:** "50% of men and 50% of women should be approved."
+
+**Example:**
 ```
+Loan approval rates:
+- Men: 600 approved out of 1000 = 60%
+- Women: 540 approved out of 900 = 60%
+
+Demographic parity satisfied? YES (both 60%)
+```
+
+**When it makes sense:** When you believe historical qualifications themselves reflect past discrimination, so you want equal outcomes regardless of current qualifications.
+
+**Limitation:** This metric ignores whether approvals are actually correct. If 80% of men actually repay their loans but only 50% of women do (perhaps due to genuine economic differences), approving equal percentages gives men and women different accuracy—which some would call unfair.
+
+**Simple calculation:**
 
 ```python
-def demographic_parity(predictions, protected_attribute):
+def demographic_parity(decisions, protected_attr):
     """
-    Calculate demographic parity metrics.
+    Calculate demographic parity difference.
     
-    Returns:
-        Dict with rates and difference
+    Returns: Difference in positive rates between groups.
+             0 = perfect demographic parity
+             Larger values = more disparity
     """
-    groups = protected_attribute.unique()
-    rates = {}
+    groups = {}
     
-    for group in groups:
-        mask = protected_attribute == group
-        rate = predictions[mask].mean()
-        rates[group] = rate
+    for d in decisions:
+        group = d[protected_attr]
+        if group not in groups:
+            groups[group] = {"positive": 0, "total": 0}
+        groups[group]["total"] += 1
+        if d["outcome"] == 1:  # Positive outcome
+            groups[group]["positive"] += 1
     
-    max_rate = max(rates.values())
-    min_rate = min(rates.values())
+    rates = {g: c["positive"]/c["total"] for g, c in groups.items()}
+    difference = max(rates.values()) - min(rates.values())
     
-    return {
-        'rates': rates,
-        'difference': max_rate - min_rate,
-        'ratio': min_rate / max_rate if max_rate > 0 else 0,
-        'satisfied': (max_rate - min_rate) < 0.05  # 5% threshold
-    }
+    return {"rates": rates, "difference": difference}
 ```
 
-**Interpretation:**
-- Difference close to 0 = fairer
-- Common threshold: difference < 0.05 or ratio > 0.8 (four-fifths rule)
+#### 2. Equalized Odds
 
-**Limitations:**
-- Ignores actual qualifications
-- May require lowering standards for one group or raising for another
-- Doesn't guarantee individuals are treated fairly
+**The idea:** The model should be equally accurate for all groups—same true positive rate (TPR) AND same false positive rate (FPR).
 
-#### 2. Equalized Odds (Separation)
+**Mathematical definition:**
+- P(Predict Yes | Actually Yes, Group A) = P(Predict Yes | Actually Yes, Group B) [Equal TPR]
+- P(Predict Yes | Actually No, Group A) = P(Predict Yes | Actually No, Group B) [Equal FPR]
 
-**Definition:** Both true positive rate (TPR) and false positive rate (FPR) should be equal across groups.
+**In plain English:** "Among people who will repay, we should approve the same percentage from each group. Among people who will default, we should mistakenly approve the same percentage from each group."
 
+**Example:**
 ```
-Mathematical Definition:
-P(Ŷ = 1 | A = 0, Y = 1) = P(Ŷ = 1 | A = 1, Y = 1)  [Equal TPR]
-P(Ŷ = 1 | A = 0, Y = 0) = P(Ŷ = 1 | A = 1, Y = 0)  [Equal FPR]
+Among people who actually repaid:
+- Men approved: 90%  (TPR for men)
+- Women approved: 90%  (TPR for women)
+✓ Equal TPR
 
-Where:
-• Y = Actual outcome (ground truth)
-```
+Among people who actually defaulted:
+- Men approved: 10%  (FPR for men)
+- Women approved: 10%  (FPR for women)
+✓ Equal FPR
 
-```python
-def equalized_odds(predictions, actual, protected_attribute):
-    """
-    Calculate equalized odds metrics.
-    """
-    groups = protected_attribute.unique()
-    metrics = {'tpr': {}, 'fpr': {}, 'tnr': {}, 'fnr': {}}
-    
-    for group in groups:
-        mask = protected_attribute == group
-        group_preds = predictions[mask]
-        group_actual = actual[mask]
-        
-        # True Positive Rate (Sensitivity/Recall)
-        positives = group_actual == 1
-        if positives.sum() > 0:
-            tpr = group_preds[positives].mean()
-        else:
-            tpr = 0
-        
-        # False Positive Rate
-        negatives = group_actual == 0
-        if negatives.sum() > 0:
-            fpr = group_preds[negatives].mean()
-        else:
-            fpr = 0
-        
-        metrics['tpr'][group] = tpr
-        metrics['fpr'][group] = fpr
-        metrics['tnr'][group] = 1 - fpr
-        metrics['fnr'][group] = 1 - tpr
-    
-    # Calculate differences
-    metrics['tpr_difference'] = max(metrics['tpr'].values()) - min(metrics['tpr'].values())
-    metrics['fpr_difference'] = max(metrics['fpr'].values()) - min(metrics['fpr'].values())
-    
-    # Equalized odds satisfied if both differences are small
-    metrics['satisfied'] = (
-        metrics['tpr_difference'] < 0.05 and 
-        metrics['fpr_difference'] < 0.05
-    )
-    
-    return metrics
+Equalized odds satisfied? YES
 ```
 
-**Interpretation:**
-- TPR difference: Do qualified people from different groups have equal chances?
-- FPR difference: Do unqualified people from different groups face equal risk of false approval?
-- Both must be equal for equalized odds
+**When it makes sense:** When you have reliable ground truth labels and want the model to be equally accurate for all groups.
+
+**Limitation:** Requires knowing the actual correct answer, which may not be available or may itself be biased.
 
 #### 3. Equal Opportunity
 
-**Definition:** A relaxed version of equalized odds—only requires equal true positive rates.
+**The idea:** A relaxed version of equalized odds—only the true positive rate needs to be equal.
 
-```
-Mathematical Definition:
-P(Ŷ = 1 | A = 0, Y = 1) = P(Ŷ = 1 | A = 1, Y = 1)
-```
+**Mathematical definition:** P(Predict Yes | Actually Yes, Group A) = P(Predict Yes | Actually Yes, Group B)
 
-```python
-def equal_opportunity(predictions, actual, protected_attribute):
-    """
-    Calculate equal opportunity (TPR parity only).
-    """
-    groups = protected_attribute.unique()
-    tpr_by_group = {}
-    
-    for group in groups:
-        mask = protected_attribute == group
-        positives = actual[mask] == 1
-        
-        if positives.sum() > 0:
-            tpr = predictions[mask][positives].mean()
-        else:
-            tpr = 0
-        
-        tpr_by_group[group] = tpr
-    
-    return {
-        'tpr_by_group': tpr_by_group,
-        'difference': max(tpr_by_group.values()) - min(tpr_by_group.values()),
-        'satisfied': (max(tpr_by_group.values()) - min(tpr_by_group.values())) < 0.05
-    }
+**In plain English:** "Among qualified people, we should approve the same percentage from each group."
+
+**Why relax the FPR requirement?** Sometimes the cost of false positives is low (e.g., showing an ad to someone not interested), while the cost of false negatives is high (e.g., denying a loan to someone who would have repaid). In such cases, you might only care about equal opportunity for qualified people.
+
+#### 4. Predictive Parity
+
+**The idea:** When the model says "yes," it should be equally likely to be correct for all groups.
+
+**Mathematical definition:** P(Actually Yes | Predict Yes, Group A) = P(Actually Yes | Predict Yes, Group B)
+
+**In plain English:** "Among people I approve, the same percentage of men and women should actually repay."
+
+**Example:**
+```
+Among approved applicants:
+- Men who repaid: 85%
+- Women who repaid: 85%
+
+Predictive parity satisfied? YES
 ```
 
-**Use case:** When you care most that deserving individuals from all groups have equal chance of positive outcomes.
+**When it makes sense:** When positive predictions lead to consequences that need equal justification (e.g., arresting people for predicted crimes—you want arrests to be equally valid).
 
-#### 4. Predictive Parity (Sufficiency)
-
-**Definition:** Precision (positive predictive value) should be equal across groups.
-
-```
-Mathematical Definition:
-P(Y = 1 | Ŷ = 1, A = 0) = P(Y = 1 | Ŷ = 1, A = 1)
-```
-
-```python
-def predictive_parity(predictions, actual, protected_attribute):
-    """
-    Calculate predictive parity metrics.
-    """
-    groups = protected_attribute.unique()
-    ppv_by_group = {}  # Positive Predictive Value (Precision)
-    npv_by_group = {}  # Negative Predictive Value
-    
-    for group in groups:
-        mask = protected_attribute == group
-        predicted_positive = predictions[mask] == 1
-        predicted_negative = predictions[mask] == 0
-        
-        # PPV: Among predicted positives, how many are actually positive?
-        if predicted_positive.sum() > 0:
-            ppv = actual[mask][predicted_positive].mean()
-        else:
-            ppv = 0
-        
-        # NPV: Among predicted negatives, how many are actually negative?
-        if predicted_negative.sum() > 0:
-            npv = (actual[mask][predicted_negative] == 0).mean()
-        else:
-            npv = 0
-        
-        ppv_by_group[group] = ppv
-        npv_by_group[group] = npv
-    
-    return {
-        'ppv_by_group': ppv_by_group,
-        'npv_by_group': npv_by_group,
-        'ppv_difference': max(ppv_by_group.values()) - min(ppv_by_group.values()),
-        'satisfied': (max(ppv_by_group.values()) - min(ppv_by_group.values())) < 0.05
-    }
-```
-
-**Interpretation:** When the model says "approved," is it equally likely to be correct for all groups?
+**Limitation:** Can coexist with very different treatment of groups. If you approve 80% of men but only 40% of equally qualified women, predictive parity can still hold if both groups have 85% repayment among approvals.
 
 #### 5. Calibration
 
-**Definition:** Among all instances where the model predicts probability p, the actual proportion should be p, for all groups.
+**The idea:** When the model predicts "70% likely," the actual rate should be 70%—for all groups.
 
-```
-Mathematical Definition:
-P(Y = 1 | S = s, A = 0) = P(Y = 1 | S = s, A = 1) = s
+**In plain English:** "My confidence scores should mean the same thing for everyone."
 
-Where S is the model's score/probability
+**Example:**
+```
+Among predictions with 70% confidence:
+- Men: 70% actually positive ✓
+- Women: 70% actually positive ✓
+
+Among predictions with 90% confidence:
+- Men: 90% actually positive ✓
+- Women: 90% actually positive ✓
+
+Calibration satisfied? YES
 ```
 
-```python
-def calibration_by_group(probabilities, actual, protected_attribute, n_bins=10):
-    """
-    Check calibration by group.
-    """
-    groups = protected_attribute.unique()
-    calibration = {}
-    
-    for group in groups:
-        mask = protected_attribute == group
-        group_probs = probabilities[mask]
-        group_actual = actual[mask]
-        
-        # Bin predictions
-        bins = np.linspace(0, 1, n_bins + 1)
-        bin_indices = np.digitize(group_probs, bins) - 1
-        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-        
-        bin_stats = []
-        for i in range(n_bins):
-            bin_mask = bin_indices == i
-            if bin_mask.sum() > 0:
-                predicted_prob = group_probs[bin_mask].mean()
-                actual_rate = group_actual[bin_mask].mean()
-                bin_stats.append({
-                    'predicted': predicted_prob,
-                    'actual': actual_rate,
-                    'count': bin_mask.sum(),
-                    'error': abs(predicted_prob - actual_rate)
-                })
-        
-        calibration[group] = bin_stats
-    
-    return calibration
-```
+**When it makes sense:** When you're using probability scores for downstream decisions and need them to be reliable across groups.
 
 ### The Impossibility Theorem
 
-**Critical insight:** Except in trivial cases, it is mathematically impossible to satisfy demographic parity, equalized odds, and predictive parity simultaneously.
+**Critical insight:** Except in special cases (when base rates are identical across groups), it is mathematically impossible to satisfy demographic parity, equalized odds, and predictive parity simultaneously.
 
-```
-The Fairness Impossibility:
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                          │
-│  IF base rates differ between groups (P(Y=1|A=0) ≠ P(Y=1|A=1))          │
-│                                                                          │
-│  THEN you cannot simultaneously achieve:                                 │
-│  • Demographic Parity                                                   │
-│  • Equalized Odds                                                       │
-│  • Predictive Parity                                                    │
-│                                                                          │
-│  ─────────────────────────────────────────────────────────────────────  │
-│                                                                          │
-│  Example:                                                               │
-│  • Group A: 80% actually qualify (base rate = 0.8)                      │
-│  • Group B: 50% actually qualify (base rate = 0.5)                      │
-│                                                                          │
-│  Demographic Parity: Approve same % from each group                     │
-│    → But then precision differs (more false positives in Group B)       │
-│                                                                          │
-│  Predictive Parity: Same precision for approvals in each group          │
-│    → But then approval rates must differ                                │
-│                                                                          │
-│  Equalized Odds: Same TPR and FPR                                       │
-│    → But then demographic parity is violated                            │
-│                                                                          │
-│  YOU MUST CHOOSE which fairness criterion matters most for your context │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+**Why?** Consider a scenario:
+- Group A: 80% actually qualified (base rate 0.8)
+- Group B: 50% actually qualified (base rate 0.5)
 
-### Choosing Appropriate Fairness Metrics
+If you want equal approval rates (demographic parity), you must approve some unqualified people from Group B or reject some qualified people from Group A. This breaks equal accuracy (equalized odds).
 
-| Context | Recommended Metric | Reasoning |
-|---------|-------------------|-----------|
-| **Hiring** | Demographic Parity + Equal Opportunity | Legal requirements, opportunity equality |
-| **Lending** | Equalized Odds | Want accurate predictions regardless of group |
-| **Criminal Justice** | Equal Opportunity | False negatives very costly |
-| **Medical Diagnosis** | Equalized Odds | Both false positives and negatives matter |
-| **Content Moderation** | Calibration | Probability scores should be meaningful |
-| **Insurance** | Predictive Parity | Actuarial accuracy required |
+If you want equal accuracy (equalized odds), the different base rates mean you'll approve more from Group A—breaking demographic parity.
 
-### Implementing Fairness Metrics in Testing
+**Practical implication:** You must choose which fairness criterion matters most for your context.
+
+### Choosing the Right Metric
+
+| Context | Often Prioritize | Reasoning |
+|---------|------------------|-----------|
+| Criminal justice | Equalized Odds | Error rates should be equal across demographics |
+| Hiring with diversity goals | Demographic Parity | Address historical underrepresentation |
+| Healthcare diagnosis | Equal Opportunity | Sick people should have equal chance of diagnosis |
+| Lending | Predictive Parity | Business model requires equally valid approvals |
+| Advertising | Calibration | Probability scores drive bidding decisions |
+
+### Implementing Fairness Metrics
+
+Here's a practical example of calculating multiple metrics:
 
 ```python
 """
-Comprehensive Fairness Metrics Calculator
+Fairness Metrics Calculator
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional
-
-class FairnessMetricsCalculator:
+def calculate_all_metrics(predictions, actual, protected):
     """
-    Calculate multiple fairness metrics for ML model evaluation.
-    """
-    
-    def __init__(self, 
-                 predictions: np.ndarray,
-                 actual: np.ndarray,
-                 protected_attribute: np.ndarray,
-                 probabilities: Optional[np.ndarray] = None):
-        """
-        Args:
-            predictions: Binary predictions (0/1)
-            actual: Ground truth labels (0/1)
-            protected_attribute: Group membership
-            probabilities: Predicted probabilities (optional)
-        """
-        self.predictions = np.array(predictions)
-        self.actual = np.array(actual)
-        self.protected = np.array(protected_attribute)
-        self.probabilities = np.array(probabilities) if probabilities is not None else None
-        self.groups = np.unique(self.protected)
-    
-    def all_metrics(self) -> Dict:
-        """Calculate all fairness metrics."""
-        return {
-            'demographic_parity': self.demographic_parity(),
-            'equalized_odds': self.equalized_odds(),
-            'equal_opportunity': self.equal_opportunity(),
-            'predictive_parity': self.predictive_parity(),
-            'overall_accuracy': self.accuracy_by_group(),
-        }
-    
-    def demographic_parity(self) -> Dict:
-        """Statistical parity metrics."""
-        rates = {}
-        for group in self.groups:
-            mask = self.protected == group
-            rates[str(group)] = self.predictions[mask].mean()
-        
-        values = list(rates.values())
-        return {
-            'selection_rates': rates,
-            'difference': max(values) - min(values),
-            'ratio': min(values) / max(values) if max(values) > 0 else 0,
-        }
-    
-    def equalized_odds(self) -> Dict:
-        """Separation metrics."""
-        tpr, fpr = {}, {}
-        
-        for group in self.groups:
-            mask = self.protected == group
-            
-            pos_mask = (mask) & (self.actual == 1)
-            neg_mask = (mask) & (self.actual == 0)
-            
-            tpr[str(group)] = self.predictions[pos_mask].mean() if pos_mask.sum() > 0 else 0
-            fpr[str(group)] = self.predictions[neg_mask].mean() if neg_mask.sum() > 0 else 0
-        
-        tpr_vals = list(tpr.values())
-        fpr_vals = list(fpr.values())
-        
-        return {
-            'tpr': tpr,
-            'fpr': fpr,
-            'tpr_difference': max(tpr_vals) - min(tpr_vals),
-            'fpr_difference': max(fpr_vals) - min(fpr_vals),
-            'equalized_odds_difference': max(
-                max(tpr_vals) - min(tpr_vals),
-                max(fpr_vals) - min(fpr_vals)
-            ),
-        }
-    
-    def equal_opportunity(self) -> Dict:
-        """TPR parity only."""
-        eo = self.equalized_odds()
-        return {
-            'tpr': eo['tpr'],
-            'difference': eo['tpr_difference'],
-        }
-    
-    def predictive_parity(self) -> Dict:
-        """Sufficiency metrics."""
-        ppv = {}
-        
-        for group in self.groups:
-            mask = self.protected == group
-            pred_pos = (mask) & (self.predictions == 1)
-            
-            if pred_pos.sum() > 0:
-                ppv[str(group)] = self.actual[pred_pos].mean()
-            else:
-                ppv[str(group)] = 0
-        
-        values = list(ppv.values())
-        return {
-            'ppv': ppv,
-            'difference': max(values) - min(values),
-        }
-    
-    def accuracy_by_group(self) -> Dict:
-        """Accuracy metrics per group."""
-        acc = {}
-        for group in self.groups:
-            mask = self.protected == group
-            correct = self.predictions[mask] == self.actual[mask]
-            acc[str(group)] = correct.mean()
-        
-        return {
-            'accuracy': acc,
-            'difference': max(acc.values()) - min(acc.values()),
-        }
-    
-    def generate_report(self) -> str:
-        """Generate comprehensive fairness report."""
-        metrics = self.all_metrics()
-        
-        report = """
-╔══════════════════════════════════════════════════════════════════════════╗
-║                       FAIRNESS METRICS REPORT                             ║
-╠══════════════════════════════════════════════════════════════════════════╣
-
-"""
-        # Demographic Parity
-        dp = metrics['demographic_parity']
-        report += "DEMOGRAPHIC PARITY (Statistical Parity)\n"
-        report += "─" * 40 + "\n"
-        report += "Definition: Equal positive prediction rates across groups\n\n"
-        for group, rate in dp['selection_rates'].items():
-            report += f"  {group}: {rate:.1%}\n"
-        report += f"\n  Difference: {dp['difference']:.3f}"
-        report += f" ({'PASS' if dp['difference'] < 0.05 else 'FAIL'} at 0.05 threshold)\n"
-        report += f"  Ratio: {dp['ratio']:.3f}"
-        report += f" ({'PASS' if dp['ratio'] >= 0.8 else 'FAIL'} at 0.80 threshold)\n\n"
-        
-        # Equalized Odds
-        eo = metrics['equalized_odds']
-        report += "EQUALIZED ODDS (Separation)\n"
-        report += "─" * 40 + "\n"
-        report += "Definition: Equal TPR and FPR across groups\n\n"
-        report += "  True Positive Rates:\n"
-        for group, rate in eo['tpr'].items():
-            report += f"    {group}: {rate:.1%}\n"
-        report += f"  TPR Difference: {eo['tpr_difference']:.3f}\n\n"
-        report += "  False Positive Rates:\n"
-        for group, rate in eo['fpr'].items():
-            report += f"    {group}: {rate:.1%}\n"
-        report += f"  FPR Difference: {eo['fpr_difference']:.3f}\n\n"
-        
-        # Predictive Parity
-        pp = metrics['predictive_parity']
-        report += "PREDICTIVE PARITY (Sufficiency)\n"
-        report += "─" * 40 + "\n"
-        report += "Definition: Equal precision across groups\n\n"
-        for group, rate in pp['ppv'].items():
-            report += f"  {group}: {rate:.1%}\n"
-        report += f"\n  Difference: {pp['difference']:.3f}\n\n"
-        
-        # Overall Assessment
-        report += "═" * 40 + "\n"
-        report += "OVERALL ASSESSMENT\n"
-        report += "═" * 40 + "\n"
-        
-        issues = []
-        if dp['difference'] >= 0.05:
-            issues.append("Demographic parity violation")
-        if eo['tpr_difference'] >= 0.05:
-            issues.append("TPR disparity (equal opportunity violation)")
-        if eo['fpr_difference'] >= 0.05:
-            issues.append("FPR disparity")
-        if pp['difference'] >= 0.05:
-            issues.append("Predictive parity violation")
-        
-        if issues:
-            report += "\n⚠️  FAIRNESS CONCERNS:\n"
-            for issue in issues:
-                report += f"   • {issue}\n"
-        else:
-            report += "\n✓ No major fairness violations detected\n"
-        
-        return report
-
-
-# Utility function for quick checks
-def quick_fairness_check(model, X_test, y_test, protected_column):
-    """
-    Quick fairness assessment for a model.
-    """
-    predictions = model.predict(X_test)
-    protected = X_test[protected_column] if isinstance(X_test, pd.DataFrame) else protected_column
-    
-    calc = FairnessMetricsCalculator(predictions, y_test, protected)
-    return calc.generate_report()
-```
-
-### Reporting Fairness Results
-
-```
-Effective Fairness Reporting:
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                          │
-│  FOR TECHNICAL AUDIENCES:                                               │
-│  ─────────────────────────                                              │
-│  • Include precise metric values                                        │
-│  • Show confidence intervals                                            │
-│  • Compare to baseline models                                           │
-│  • Document methodology                                                 │
-│                                                                          │
-│  FOR BUSINESS STAKEHOLDERS:                                             │
-│  ──────────────────────────                                             │
-│  • Lead with key findings                                               │
-│  • Use plain language                                                   │
-│  • Visualize disparities                                                │
-│  • Focus on business impact                                             │
-│                                                                          │
-│  FOR COMPLIANCE/LEGAL:                                                  │
-│  ─────────────────────                                                  │
-│  • Map metrics to regulations                                           │
-│  • Document four-fifths rule compliance                                 │
-│  • Show audit trail                                                     │
-│  • Include remediation plans                                            │
-│                                                                          │
-│  ALWAYS INCLUDE:                                                        │
-│  ──────────────                                                         │
-│  • Protected attributes tested                                          │
-│  • Sample sizes per group                                               │
-│  • Thresholds used                                                      │
-│  • Date of assessment                                                   │
-│  • Model version                                                        │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## Code Example
-
-Complete fairness testing workflow:
-
-```python
-"""
-Complete Fairness Testing Workflow
-"""
-
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-
-def run_fairness_audit(model, X_test, y_test, protected_cols, 
-                       thresholds=None):
-    """
-    Run complete fairness audit on a model.
+    Calculate key fairness metrics.
     
     Args:
-        model: Trained model
-        X_test: Test features
-        y_test: Test labels
-        protected_cols: List of protected attribute columns
-        thresholds: Dict of metric thresholds
+        predictions: List of model predictions (0 or 1)
+        actual: List of actual outcomes (0 or 1)
+        protected: List of group labels (e.g., "A" or "B")
     
     Returns:
-        Audit results dictionary
+        Dict with all fairness metrics
     """
-    if thresholds is None:
-        thresholds = {
-            'demographic_parity_difference': 0.05,
-            'equalized_odds_difference': 0.05,
-            'disparate_impact_ratio': 0.8,
+    # Group data
+    groups = set(protected)
+    
+    # Calculate rates for each group
+    metrics = {}
+    for group in groups:
+        # Get indices for this group
+        idx = [i for i, p in enumerate(protected) if p == group]
+        
+        group_pred = [predictions[i] for i in idx]
+        group_actual = [actual[i] for i in idx]
+        
+        # Selection rate (for demographic parity)
+        selection_rate = sum(group_pred) / len(group_pred)
+        
+        # True positive rate (TPR)
+        positives = [i for i in idx if actual[i] == 1]
+        if positives:
+            tpr = sum(predictions[i] for i in positives) / len(positives)
+        else:
+            tpr = 0
+        
+        # False positive rate (FPR)
+        negatives = [i for i in idx if actual[i] == 0]
+        if negatives:
+            fpr = sum(predictions[i] for i in negatives) / len(negatives)
+        else:
+            fpr = 0
+        
+        # Predictive parity (precision)
+        approved = [i for i in idx if predictions[i] == 1]
+        if approved:
+            precision = sum(actual[i] for i in approved) / len(approved)
+        else:
+            precision = 0
+        
+        metrics[group] = {
+            "selection_rate": selection_rate,
+            "tpr": tpr,
+            "fpr": fpr,
+            "precision": precision
         }
     
-    predictions = model.predict(X_test)
-    
-    if hasattr(model, 'predict_proba'):
-        probabilities = model.predict_proba(X_test)[:, 1]
-    else:
-        probabilities = None
-    
-    audit_results = {
-        'thresholds': thresholds,
-        'by_attribute': {},
-        'overall_pass': True,
-        'violations': []
+    # Calculate differences
+    group_list = list(groups)
+    return {
+        "by_group": metrics,
+        "demographic_parity_diff": abs(
+            metrics[group_list[0]]["selection_rate"] - 
+            metrics[group_list[1]]["selection_rate"]
+        ),
+        "equalized_odds_tpr_diff": abs(
+            metrics[group_list[0]]["tpr"] - 
+            metrics[group_list[1]]["tpr"]
+        ),
+        "equalized_odds_fpr_diff": abs(
+            metrics[group_list[0]]["fpr"] - 
+            metrics[group_list[1]]["fpr"]
+        ),
+        "predictive_parity_diff": abs(
+            metrics[group_list[0]]["precision"] - 
+            metrics[group_list[1]]["precision"]
+        )
     }
-    
-    for col in protected_cols:
-        protected = X_test[col] if isinstance(X_test, pd.DataFrame) else X_test[:, col]
-        
-        calc = FairnessMetricsCalculator(
-            predictions=predictions,
-            actual=y_test,
-            protected_attribute=protected,
-            probabilities=probabilities
-        )
-        
-        metrics = calc.all_metrics()
-        
-        # Check violations
-        violations = []
-        
-        dp = metrics['demographic_parity']
-        if dp['difference'] >= thresholds['demographic_parity_difference']:
-            violations.append(f"Demographic parity: {dp['difference']:.3f}")
-            audit_results['overall_pass'] = False
-        
-        if dp['ratio'] < thresholds['disparate_impact_ratio']:
-            violations.append(f"Disparate impact: {dp['ratio']:.3f}")
-            audit_results['overall_pass'] = False
-        
-        eo = metrics['equalized_odds']
-        if eo['equalized_odds_difference'] >= thresholds['equalized_odds_difference']:
-            violations.append(f"Equalized odds: {eo['equalized_odds_difference']:.3f}")
-            audit_results['overall_pass'] = False
-        
-        audit_results['by_attribute'][col] = {
-            'metrics': metrics,
-            'violations': violations,
-            'pass': len(violations) == 0
-        }
-        audit_results['violations'].extend(
-            [f"{col}: {v}" for v in violations]
-        )
-    
-    return audit_results
-
-
-def print_audit_summary(audit_results):
-    """Print human-readable audit summary."""
-    print("\n" + "=" * 60)
-    print("FAIRNESS AUDIT SUMMARY")
-    print("=" * 60)
-    
-    print(f"\nOverall Status: {'✓ PASS' if audit_results['overall_pass'] else '✗ FAIL'}")
-    
-    if audit_results['violations']:
-        print(f"\nViolations Found ({len(audit_results['violations'])}):")
-        for v in audit_results['violations']:
-            print(f"  • {v}")
-    
-    print("\nBy Protected Attribute:")
-    for attr, data in audit_results['by_attribute'].items():
-        status = '✓' if data['pass'] else '✗'
-        print(f"\n  {attr}: {status}")
-        
-        dp = data['metrics']['demographic_parity']
-        print(f"    Selection rates: {dp['selection_rates']}")
-        print(f"    Difference: {dp['difference']:.3f}, Ratio: {dp['ratio']:.3f}")
-
-
-# Example usage
-if __name__ == "__main__":
-    # Create sample data
-    np.random.seed(42)
-    n = 2000
-    
-    data = pd.DataFrame({
-        'income': np.random.normal(50000, 15000, n),
-        'credit_score': np.random.normal(700, 50, n),
-        'age': np.random.normal(40, 10, n),
-        'gender': np.random.choice(['male', 'female'], n, p=[0.6, 0.4]),
-    })
-    
-    # Create biased target (for demonstration)
-    data['approved'] = (
-        (data['income'] > 45000).astype(int) +
-        (data['credit_score'] > 680).astype(int) +
-        (data['gender'] == 'male').astype(int) * 0.5  # Bias
-    ) > 1.5
-    data['approved'] = data['approved'].astype(int)
-    
-    # Split and train
-    X = data.drop('approved', axis=1)
-    y = data['approved']
-    
-    # Encode gender for model
-    X_encoded = X.copy()
-    X_encoded['gender'] = (X['gender'] == 'male').astype(int)
-    
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_encoded, y, test_size=0.3, random_state=42
-    )
-    
-    model = RandomForestClassifier(random_state=42)
-    model.fit(X_train, y_train)
-    
-    # Run fairness audit
-    # Add original gender back for analysis
-    X_test_with_gender = X_test.copy()
-    X_test_with_gender['gender_original'] = X.loc[X_test.index, 'gender']
-    
-    audit = run_fairness_audit(
-        model=model,
-        X_test=X_test_with_gender,
-        y_test=y_test,
-        protected_cols=['gender_original']
-    )
-    
-    print_audit_summary(audit)
 ```
 
 ## Summary
 
-- **Fairness is multifaceted:** Multiple valid definitions exist (demographic parity, equalized odds, predictive parity)
-- **Metrics are context-dependent:** Choose based on domain requirements and stakeholder priorities
-- **Impossibility theorem:** You cannot satisfy all fairness criteria simultaneously when base rates differ
-- **Key metrics:**
-  - Demographic Parity: Equal selection rates
-  - Equalized Odds: Equal TPR and FPR
-  - Equal Opportunity: Equal TPR only
-  - Predictive Parity: Equal precision
-- **Implementation:** Systematic calculation and comparison across protected groups
-- **Reporting:** Tailor to audience—technical details for engineers, implications for business
+- **Demographic Parity:** Equal positive rates across groups (ignores accuracy)
+- **Equalized Odds:** Equal TPR and FPR across groups (equal accuracy)
+- **Equal Opportunity:** Equal TPR across groups (focus on qualified individuals)
+- **Predictive Parity:** Equal precision across groups (equally valid positives)
+- **Calibration:** Probability scores mean the same thing for all groups
+- **Impossibility Theorem:** You usually can't satisfy all definitions at once
+- **Choose based on context:** Different applications prioritize different fairness criteria
 
 ## Additional Resources
 
-- [Fairlearn Documentation](https://fairlearn.org/main/user_guide/fairness_in_machine_learning.html)
-- [AI Fairness 360 Metrics](https://aif360.readthedocs.io/en/latest/modules/metrics.html)
-- [Fairness Definitions Explained (Verma & Rubin)](https://fairware.cs.umass.edu/papers/Verma.pdf)
-
+- [Fairness and Machine Learning (Book)](https://fairmlbook.org/) - Comprehensive textbook on fairness
+- [Fairlearn User Guide](https://fairlearn.org/main/user_guide/) - Practical guide to fairness metrics
+- [Google's ML Fairness Course](https://developers.google.com/machine-learning/fairness-overview) - Video-based learning

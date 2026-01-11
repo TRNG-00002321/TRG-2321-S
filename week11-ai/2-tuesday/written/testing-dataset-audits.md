@@ -2,208 +2,120 @@
 
 ## Learning Objectives
 
-- Understand the critical importance of dataset quality in AI systems
-- Apply data profiling techniques to identify issues
-- Detect data imbalances and their implications
-- Assess label quality in training datasets
-- Detect data drift between training and production
+- Understand the importance of dataset quality for AI testing
+- Apply data profiling techniques to assess dataset characteristics
+- Identify data imbalances and representation issues
+- Assess label quality and consistency
+- Detect data drift over time
 - Implement dataset versioning and lineage tracking
-- Evaluate synthetic data considerations
-- Document and report audit findings effectively
+- Evaluate synthetic data appropriateness
+- Document and report audit findings
 
 ## Why This Matters
 
 *"Intelligent Engineering: Harnessing AI for Enhanced Testing and Quality Assurance"*
 
-"Garbage in, garbage out" has never been more relevant than in the age of AI. Your model can only be as good as the data it learns from. A flawlessly architected neural network trained on biased, incomplete, or mislabeled data will produce biased, incomplete, or incorrect predictions—consistently and at scale.
+"Garbage in, garbage out" is the oldest principle in data processing—and it applies doubly to AI. Your model is only as good as the data it learned from. Test your model on biased test data, and you'll get biased test results that don't reflect real performance.
 
-Dataset auditing is the foundation of trustworthy AI. Before you test the model, you must test the data. This module teaches you to examine datasets with the rigor of a forensic investigator: profiling distributions, hunting for imbalances, validating labels, tracking lineage, and detecting drift. These skills transform you from someone who tests AI outputs to someone who ensures AI inputs are worthy of trust.
+**Dataset auditing matters because:**
+
+1. **Training data bias → Model bias:** If training data underrepresents certain groups, the model will perform worse for them
+2. **Test data bias → False confidence:** If test data has the same biases as training data, metrics will look good even when real-world performance is poor
+3. **Label errors → Wrong learning:** Mislabeled examples teach the model wrong patterns
+4. **Data leakage → Inflated metrics:** If test data accidentally overlaps with training data, your accuracy is fake
+
+As a quality engineer, auditing datasets is as important as testing the model itself.
 
 ## The Concept
-
-### The Critical Role of Dataset Quality
-
 ```
 Data Quality Impact Chain:
-┌─────────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────────┐
 │                                                                          │
-│  POOR DATA                                                              │
-│     │                                                                   │
+│  POOR DATA                                                               │
+│     │                                                                    │
 │     ├──▶ Biased training ──▶ Biased model ──▶ Biased decisions         │
-│     │                                                                   │
-│     ├──▶ Missing groups ──▶ Poor generalization ──▶ Failures in prod   │
-│     │                                                                   │
+│     │                                                                    │
+│     ├──▶ Missing groups ──▶ Poor generalization ──▶ Failures in prod    │
+│     │                                                                    │
 │     ├──▶ Wrong labels ──▶ Learning wrong patterns ──▶ Wrong predictions│
-│     │                                                                   │
+│     │                                                                    │
 │     └──▶ Stale data ──▶ Outdated patterns ──▶ Model degradation        │
 │                                                                          │
-│  ─────────────────────────────────────────────────────────────────────  │
+│  ─────────────────────────────────────────────────────────────────────   │
 │                                                                          │
-│  QUALITY DATA                                                           │
-│     │                                                                   │
+│  QUALITY DATA                                                            │
+│     │                                                                    │
 │     ├──▶ Representative samples ──▶ Fair model ──▶ Equitable outcomes  │
-│     │                                                                   │
+│     │                                                                    │
 │     ├──▶ Accurate labels ──▶ Correct learning ──▶ Reliable predictions │
-│     │                                                                   │
+│     │                                                                    │
 │     └──▶ Fresh data ──▶ Current patterns ──▶ Relevant decisions        │
 │                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────┘
 ```
+### What is a Dataset Audit?
 
-### Data Profiling Techniques
+A **dataset audit** systematically examines a dataset to identify quality issues, biases, and risks before that data is used to train or evaluate a model.
 
-Data profiling is the systematic analysis of data to understand its structure, content, and quality.
+**Key questions a dataset audit answers:**
 
-#### Basic Statistical Profiling
+- Does the data represent the real-world population the model will serve?
+- Are there biased patterns that the model might learn?
+- Are the labels accurate and consistent?
+- Has the data changed since the model was trained?
+- Is the data properly versioned and documented?
+
+### Data Profiling Basics
+
+**Data profiling** is the systematic analysis of data to understand its structure, content, and quality.
+**Data profiling** creates a statistical summary of your dataset.
+
+**For numeric columns:**
+- Count, missing values
+- Min, max, mean, median
+- Standard deviation, percentiles
+- Distribution shape (normal? skewed?)
+
+**For categorical columns:**
+- Unique values count
+- Value frequencies
+- Missing values
+- Rare categories
+
+**Simple profiling code:**
 
 ```python
-"""
-Basic Data Profiling for ML Datasets
-"""
-
-import pandas as pd
-import numpy as np
-from typing import Dict, Any
-
-class DataProfiler:
-    """
-    Comprehensive data profiling for ML dataset auditing.
-    """
+def profile_dataset(df):
+    """Create basic profile of a dataset."""
+    profile = {}
     
-    def __init__(self, df: pd.DataFrame):
-        self.df = df
-        self.profile = {}
-        
-    def basic_stats(self) -> Dict[str, Any]:
-        """Generate basic statistics for the dataset."""
-        stats = {
-            'n_rows': len(self.df),
-            'n_columns': len(self.df.columns),
-            'memory_usage_mb': self.df.memory_usage(deep=True).sum() / 1e6,
-            'duplicate_rows': self.df.duplicated().sum(),
-            'duplicate_row_pct': self.df.duplicated().mean() * 100,
-        }
-        return stats
-    
-    def column_profiles(self) -> Dict[str, Dict]:
-        """Profile each column individually."""
-        profiles = {}
-        
-        for col in self.df.columns:
-            col_data = self.df[col]
-            profile = {
-                'dtype': str(col_data.dtype),
-                'n_unique': col_data.nunique(),
-                'n_missing': col_data.isna().sum(),
-                'missing_pct': col_data.isna().mean() * 100,
-            }
-            
-            # Numeric columns
-            if np.issubdtype(col_data.dtype, np.number):
-                profile.update({
-                    'mean': col_data.mean(),
-                    'std': col_data.std(),
-                    'min': col_data.min(),
-                    'max': col_data.max(),
-                    'median': col_data.median(),
-                    'q25': col_data.quantile(0.25),
-                    'q75': col_data.quantile(0.75),
-                    'n_zeros': (col_data == 0).sum(),
-                    'n_negative': (col_data < 0).sum(),
-                })
-            
-            # Categorical columns
-            else:
-                top_values = col_data.value_counts().head(5)
-                profile.update({
-                    'top_values': top_values.to_dict(),
-                    'is_unique': col_data.nunique() == len(col_data),
-                })
-            
-            profiles[col] = profile
-            
-        return profiles
-    
-    def detect_anomalies(self) -> Dict[str, list]:
-        """Detect potential data anomalies."""
-        anomalies = {
-            'high_cardinality': [],
-            'low_variance': [],
-            'high_missing': [],
-            'potential_id_columns': [],
-            'suspicious_distributions': [],
+    for column in df.columns:
+        col_data = df[column]
+        col_profile = {
+            "count": len(col_data),
+            "missing": col_data.isna().sum(),
+            "missing_pct": col_data.isna().mean() * 100
         }
         
-        for col in self.df.columns:
-            col_data = self.df[col]
-            
-            # High cardinality categorical
-            if col_data.dtype == 'object':
-                if col_data.nunique() > 100:
-                    anomalies['high_cardinality'].append(col)
-            
-            # Low variance numeric
-            if np.issubdtype(col_data.dtype, np.number):
-                if col_data.std() < 0.001:
-                    anomalies['low_variance'].append(col)
-            
-            # High missing rate
-            if col_data.isna().mean() > 0.1:
-                anomalies['high_missing'].append(col)
-            
-            # Potential ID column
-            if col_data.nunique() == len(col_data):
-                anomalies['potential_id_columns'].append(col)
+        if col_data.dtype in ['int64', 'float64']:
+            col_profile["type"] = "numeric"
+            col_profile["min"] = col_data.min()
+            col_profile["max"] = col_data.max()
+            col_profile["mean"] = col_data.mean()
+            col_profile["std"] = col_data.std()
+        else:
+            col_profile["type"] = "categorical"
+            col_profile["unique"] = col_data.nunique()
+            col_profile["top_values"] = col_data.value_counts().head(5).to_dict()
         
-        return anomalies
+        profile[column] = col_profile
     
-    def generate_report(self) -> str:
-        """Generate comprehensive profiling report."""
-        basic = self.basic_stats()
-        columns = self.column_profiles()
-        anomalies = self.detect_anomalies()
-        
-        report = f"""
-════════════════════════════════════════════════════════════════════════
-                        DATA PROFILING REPORT
-════════════════════════════════════════════════════════════════════════
-
-BASIC STATISTICS
-────────────────
-• Rows: {basic['n_rows']:,}
-• Columns: {basic['n_columns']}
-• Memory Usage: {basic['memory_usage_mb']:.2f} MB
-• Duplicate Rows: {basic['duplicate_rows']:,} ({basic['duplicate_row_pct']:.1f}%)
-
-ANOMALIES DETECTED
-──────────────────
-• High cardinality columns: {anomalies['high_cardinality']}
-• Low variance columns: {anomalies['low_variance']}
-• High missing rate (>10%): {anomalies['high_missing']}
-• Potential ID columns: {anomalies['potential_id_columns']}
-
-COLUMN DETAILS
-──────────────
-"""
-        for col, profile in columns.items():
-            report += f"\n{col} ({profile['dtype']}):\n"
-            report += f"  - Unique: {profile['n_unique']}, Missing: {profile['missing_pct']:.1f}%\n"
-            
-            if 'mean' in profile:
-                report += f"  - Mean: {profile['mean']:.2f}, Std: {profile['std']:.2f}\n"
-                report += f"  - Range: [{profile['min']:.2f}, {profile['max']:.2f}]\n"
-            
-            if 'top_values' in profile:
-                top = list(profile['top_values'].items())[:3]
-                report += f"  - Top values: {top}\n"
-        
-        return report
+    return profile
 ```
 
 ### Identifying Data Imbalances
 
-Class imbalance is a common issue that can severely affect model performance:
-
+**Class imbalance:** When some outcome classes are much more common than others.
 ```
 Class Imbalance Illustration:
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -224,84 +136,40 @@ Class Imbalance Illustration:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+Example: Fraud detection with 99% legitimate transactions and 1% fraud.
+
+**Why it matters:** Models can achieve 99% accuracy by always predicting "legitimate"—but that's useless for catching fraud.
+
+**Demographic imbalance:** When some demographic groups are underrepresented.
+
+Example: Training data has 80% male, 20% female applicants, but real-world has 50/50.
+
+**Why it matters:** Model will be better calibrated for the majority group.
+
+**How to check:**
+
 ```python
-def analyze_class_balance(df: pd.DataFrame, target_col: str) -> Dict:
-    """
-    Analyze class distribution in target variable.
-    """
-    distribution = df[target_col].value_counts()
-    percentages = df[target_col].value_counts(normalize=True) * 100
+def check_class_balance(df, target_column):
+    """Check class distribution."""
+    counts = df[target_column].value_counts()
+    percentages = df[target_column].value_counts(normalize=True) * 100
     
-    # Calculate imbalance ratio
-    min_class = distribution.min()
-    max_class = distribution.max()
-    imbalance_ratio = max_class / min_class
-    
-    analysis = {
-        'distribution': distribution.to_dict(),
-        'percentages': percentages.to_dict(),
-        'imbalance_ratio': imbalance_ratio,
-        'majority_class': distribution.idxmax(),
-        'minority_class': distribution.idxmin(),
-        'is_severely_imbalanced': imbalance_ratio > 10,
+    return {
+        "counts": counts.to_dict(),
+        "percentages": percentages.to_dict(),
+        "imbalance_ratio": counts.max() / counts.min()
     }
-    
-    # Recommendations
-    if imbalance_ratio > 100:
-        analysis['recommendation'] = "SEVERE imbalance. Consider SMOTE, undersampling, or class weights."
-    elif imbalance_ratio > 10:
-        analysis['recommendation'] = "Significant imbalance. Use stratified sampling and appropriate metrics."
-    elif imbalance_ratio > 3:
-        analysis['recommendation'] = "Moderate imbalance. Ensure stratified cross-validation."
-    else:
-        analysis['recommendation'] = "Balanced. Standard approaches should work."
-    
-    return analysis
-```
 
-### Demographic Imbalance Analysis
-
-Beyond target classes, analyze representation across demographic groups:
-
-```python
-def analyze_demographic_balance(df: pd.DataFrame, 
-                                 demographic_cols: list,
-                                 target_col: str) -> Dict:
-    """
-    Analyze demographic representation and target distribution by group.
-    """
-    report = {}
-    
-    for demo_col in demographic_cols:
-        group_analysis = {
-            'representation': {},
-            'target_distribution': {},
-            'underrepresented': [],
-        }
-        
-        # Overall representation
-        representation = df[demo_col].value_counts(normalize=True) * 100
-        group_analysis['representation'] = representation.to_dict()
-        
-        # Target distribution by group
-        for group in df[demo_col].unique():
-            group_data = df[df[demo_col] == group]
-            target_dist = group_data[target_col].value_counts(normalize=True)
-            group_analysis['target_distribution'][group] = target_dist.to_dict()
-            
-            # Flag underrepresented groups
-            if representation[group] < 10:  # Less than 10% threshold
-                group_analysis['underrepresented'].append(group)
-        
-        report[demo_col] = group_analysis
-    
-    return report
+def check_demographic_representation(df, protected_columns):
+    """Check representation across demographic groups."""
+    for col in protected_columns:
+        print(f"\n{col} distribution:")
+        print(df[col].value_counts(normalize=True) * 100)
 ```
 
 ### Label Quality Assessment
 
-Labels (ground truth) must be accurate for the model to learn correctly:
-
+Labels in training data tell the model what's "correct." Wrong labels teach wrong patterns.
 ```
 Label Quality Issues:
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -326,71 +194,56 @@ Label Quality Issues:
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+**Sources of label errors:**
+
+1. **Human annotator mistakes:** People make errors, especially when tired or confused
+2. **Ambiguous cases:** Some examples genuinely have no clear correct label
+3. **Annotator disagreement:** Different people interpret labeling guidelines differently
+4. **Stale labels:** What was correct historically may not be correct now
+
+**How to assess label quality:**
 
 ```python
-def assess_label_quality(labels_df: pd.DataFrame,
-                          primary_label_col: str,
-                          labeler_col: str = None) -> Dict:
+def assess_label_consistency(annotations):
     """
-    Assess quality of labels in a dataset.
+    Check consistency when same item has multiple annotations.
+    
+    Args:
+        annotations: List of dicts like {"item_id": 1, "annotator": "A", "label": "positive"}
     """
-    assessment = {}
+    from collections import defaultdict
     
-    # Missing labels
-    missing = labels_df[primary_label_col].isna().sum()
-    assessment['missing_labels'] = {
-        'count': missing,
-        'percentage': missing / len(labels_df) * 100
-    }
+    # Group annotations by item
+    by_item = defaultdict(list)
+    for ann in annotations:
+        by_item[ann["item_id"]].append(ann["label"])
     
-    # Label distribution (look for suspicious patterns)
-    distribution = labels_df[primary_label_col].value_counts()
-    assessment['label_distribution'] = distribution.to_dict()
+    # Check agreement
+    consistent = 0
+    inconsistent = 0
     
-    # If multiple labelers, calculate agreement
-    if labeler_col and labeler_col in labels_df.columns:
-        # Group by sample and check if labelers agree
-        # This assumes multiple labels per sample exist
-        pass  # Implementation depends on data structure
+    for item_id, labels in by_item.items():
+        if len(set(labels)) == 1:
+            consistent += 1
+        else:
+            inconsistent += 1
     
-    return assessment
-
-
-def calculate_inter_rater_reliability(labels_by_rater: pd.DataFrame) -> float:
-    """
-    Calculate Cohen's Kappa for inter-rater reliability.
-    """
-    from sklearn.metrics import cohen_kappa_score
-    
-    # Assuming two columns for two raters
-    rater1 = labels_by_rater.iloc[:, 0]
-    rater2 = labels_by_rater.iloc[:, 1]
-    
-    kappa = cohen_kappa_score(rater1, rater2)
-    
-    # Interpretation
-    if kappa < 0:
-        interpretation = "No agreement"
-    elif kappa < 0.20:
-        interpretation = "Slight agreement"
-    elif kappa < 0.40:
-        interpretation = "Fair agreement"
-    elif kappa < 0.60:
-        interpretation = "Moderate agreement"
-    elif kappa < 0.80:
-        interpretation = "Substantial agreement"
-    else:
-        interpretation = "Almost perfect agreement"
-    
+    total = consistent + inconsistent
     return {
-        'kappa': kappa,
-        'interpretation': interpretation
+        "consistent": consistent,
+        "inconsistent": inconsistent,
+        "agreement_rate": consistent / total if total > 0 else 0
     }
 ```
 
 ### Data Drift Detection
 
-Data drift occurs when production data differs from training data:
+**Data drift** occurs when production data differs from training data.
+
+**Types of drift:**
+- **Feature drift:** Input distributions change
+- **Label drift:** Outcome distributions change
+- **Concept drift:** Relationship between inputs and outputs changes
 
 ```
 Types of Data Drift:
@@ -421,71 +274,43 @@ Types of Data Drift:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Simple drift check:**
+
 ```python
-from scipy import stats
-import numpy as np
-
-def detect_covariate_drift(reference_data: pd.DataFrame,
-                            current_data: pd.DataFrame,
-                            numerical_cols: list,
-                            threshold: float = 0.05) -> Dict:
+def check_drift(reference_data, current_data, columns):
     """
-    Detect drift in feature distributions using statistical tests.
-    """
-    drift_report = {}
+    Compare reference (training) and current (production) data.
     
-    for col in numerical_cols:
-        ref = reference_data[col].dropna()
-        cur = current_data[col].dropna()
+    Returns alert if significant drift detected.
+    """
+    alerts = []
+    
+    for col in columns:
+        ref_mean = reference_data[col].mean()
+        cur_mean = current_data[col].mean()
         
-        # Kolmogorov-Smirnov test
-        ks_stat, p_value = stats.ks_2samp(ref, cur)
+        # Calculate percent change
+        pct_change = abs(cur_mean - ref_mean) / ref_mean * 100
         
-        drift_report[col] = {
-            'ks_statistic': ks_stat,
-            'p_value': p_value,
-            'drift_detected': p_value < threshold,
-            'reference_mean': ref.mean(),
-            'current_mean': cur.mean(),
-            'mean_shift': cur.mean() - ref.mean(),
-            'reference_std': ref.std(),
-            'current_std': cur.std(),
-        }
+        if pct_change > 10:  # 10% threshold
+            alerts.append({
+                "column": col,
+                "reference_mean": ref_mean,
+                "current_mean": cur_mean,
+                "percent_change": pct_change
+            })
     
-    return drift_report
-
-
-def population_stability_index(reference: pd.Series, 
-                                current: pd.Series,
-                                bins: int = 10) -> float:
-    """
-    Calculate Population Stability Index (PSI).
-    
-    PSI < 0.1: No significant change
-    0.1 <= PSI < 0.2: Moderate change, monitor
-    PSI >= 0.2: Significant change, investigate
-    """
-    # Create bins from reference distribution
-    _, bin_edges = np.histogram(reference, bins=bins)
-    
-    # Calculate proportions in each bin
-    ref_counts, _ = np.histogram(reference, bins=bin_edges)
-    cur_counts, _ = np.histogram(current, bins=bin_edges)
-    
-    ref_pct = ref_counts / len(reference)
-    cur_pct = cur_counts / len(current)
-    
-    # Avoid division by zero
-    ref_pct = np.where(ref_pct == 0, 0.0001, ref_pct)
-    cur_pct = np.where(cur_pct == 0, 0.0001, cur_pct)
-    
-    # Calculate PSI
-    psi = np.sum((cur_pct - ref_pct) * np.log(cur_pct / ref_pct))
-    
-    return psi
+    return alerts
 ```
 
-### Dataset Versioning and Lineage
+### Dataset Versioning
+
+Just like code, datasets should be versioned:
+
+**Why version datasets:**
+- **Reproducibility:** Know exactly what data trained/tested a model
+- **Debugging:** Trace issues to specific data versions
+- **Auditing:** Demonstrate what data was used when
 
 Track what data was used when:
 
@@ -523,10 +348,34 @@ Dataset Versioning Best Practices:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Simple versioning approach:**
+
+```python
+import hashlib
+import json
+from datetime import datetime
+
+def version_dataset(df, name):
+    """Create version metadata for a dataset."""
+    # Calculate checksum of data
+    data_str = df.to_json()
+    checksum = hashlib.md5(data_str.encode()).hexdigest()
+    
+    version = {
+        "name": name,
+        "version_id": checksum[:8],
+        "created_at": datetime.now().isoformat(),
+        "rows": len(df),
+        "columns": list(df.columns),
+        "checksum": checksum
+    }
+    
+    return version
+```
+
 ### Synthetic Data Considerations
 
-Synthetic data is artificially generated data that mimics real data:
-
+Sometimes you can't use real data (privacy, scarcity). Synthetic data is generated to mimic real data.
 ```
 Synthetic Data Audit Checklist:
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -564,372 +413,131 @@ Synthetic Data Audit Checklist:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Audit Documentation and Reporting
+**Risks with synthetic test data:**
+- May not capture rare edge cases
+- May not represent real-world correlations
+- May hide biases that exist in real data
+- May give false confidence in model performance
+
+**Best practices:**
+- Validate synthetic data distribution against real samples
+- Use synthetic for development, real for final evaluation
+- Document when and why synthetic data was used
+
+### Audit Documentation
+
+An audit should produce clear documentation:
 
 ```python
-class DatasetAuditReport:
-    """
-    Generate comprehensive dataset audit report.
-    """
-    
-    def __init__(self, dataset_name: str, dataset_version: str):
-        self.dataset_name = dataset_name
-        self.version = dataset_version
-        self.findings = []
-        self.recommendations = []
-        
-    def add_finding(self, category: str, severity: str, 
-                    description: str, evidence: str):
-        """Add an audit finding."""
-        self.findings.append({
-            'category': category,
-            'severity': severity,  # CRITICAL, HIGH, MEDIUM, LOW
-            'description': description,
-            'evidence': evidence,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    def add_recommendation(self, finding_id: int, action: str, 
-                           priority: str):
-        """Add recommendation for a finding."""
-        self.recommendations.append({
-            'finding_id': finding_id,
-            'action': action,
-            'priority': priority
-        })
-    
-    def generate_report(self) -> str:
-        """Generate formatted audit report."""
-        report = f"""
-╔══════════════════════════════════════════════════════════════════════════╗
-║                       DATASET AUDIT REPORT                                ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║  Dataset: {self.dataset_name:<60}  ║
-║  Version: {self.version:<60}  ║
-║  Audit Date: {datetime.now().strftime('%Y-%m-%d %H:%M'):<56}  ║
-╠══════════════════════════════════════════════════════════════════════════╣
+def generate_audit_report(dataset, audit_results):
+    """Generate audit summary report."""
+    report = f"""
+DATASET AUDIT REPORT
+====================
+Dataset: {dataset.name}
+Date: {datetime.now().strftime('%Y-%m-%d')}
+Rows: {len(dataset)}
 
-EXECUTIVE SUMMARY
-─────────────────
-• Total Findings: {len(self.findings)}
-• Critical: {sum(1 for f in self.findings if f['severity'] == 'CRITICAL')}
-• High: {sum(1 for f in self.findings if f['severity'] == 'HIGH')}
-• Medium: {sum(1 for f in self.findings if f['severity'] == 'MEDIUM')}
-• Low: {sum(1 for f in self.findings if f['severity'] == 'LOW')}
+DATA QUALITY
+------------
+Missing values: {audit_results['missing_pct']:.1f}%
+Duplicate rows: {audit_results['duplicate_count']}
 
-DETAILED FINDINGS
-─────────────────
-"""
-        for i, finding in enumerate(self.findings, 1):
-            report += f"""
-Finding #{i} [{finding['severity']}]
-Category: {finding['category']}
-Description: {finding['description']}
-Evidence: {finding['evidence']}
-"""
-        
-        report += """
+CLASS BALANCE
+-------------
+{format_class_distribution(audit_results['class_distribution'])}
+
+DEMOGRAPHIC REPRESENTATION
+--------------------------
+{format_demographic_data(audit_results['demographics'])}
+
+DRIFT ALERTS
+------------
+{format_drift_alerts(audit_results['drift_alerts'])}
+
 RECOMMENDATIONS
-───────────────
+---------------
+{format_recommendations(audit_results)}
 """
-        for rec in self.recommendations:
-            report += f"• [{rec['priority']}] {rec['action']}\n"
-        
-        return report
+    return report
 ```
 
 ## Code Example
 
-Complete dataset audit implementation:
-
 ```python
 """
-Comprehensive Dataset Audit Tool
+Simple Dataset Audit Framework
 """
-
-import pandas as pd
-import numpy as np
-from datetime import datetime
-from typing import Dict, List, Any
 
 class DatasetAuditor:
-    """
-    Complete dataset auditing tool for ML datasets.
-    """
+    """Audit a dataset for quality issues."""
     
-    def __init__(self, df: pd.DataFrame, name: str, version: str):
+    def __init__(self, df):
         self.df = df
-        self.name = name
-        self.version = version
-        self.audit_results = {}
+        self.issues = []
     
-    def run_full_audit(self, 
-                       target_col: str = None,
-                       protected_attrs: List[str] = None,
-                       reference_data: pd.DataFrame = None) -> Dict:
-        """
-        Run comprehensive dataset audit.
-        """
-        results = {
-            'metadata': self._audit_metadata(),
-            'quality': self._audit_quality(),
-            'completeness': self._audit_completeness(),
-            'distribution': self._audit_distributions(),
-        }
-        
-        if target_col:
-            results['target_balance'] = self._audit_target_balance(target_col)
-        
-        if protected_attrs:
-            results['demographic_balance'] = self._audit_demographics(
-                protected_attrs, target_col
-            )
-        
-        if reference_data is not None:
-            results['drift'] = self._audit_drift(reference_data)
-        
-        self.audit_results = results
-        return results
-    
-    def _audit_metadata(self) -> Dict:
-        """Audit basic dataset metadata."""
-        return {
-            'n_rows': len(self.df),
-            'n_columns': len(self.df.columns),
-            'columns': list(self.df.columns),
-            'dtypes': {col: str(dtype) for col, dtype in self.df.dtypes.items()},
-            'memory_mb': self.df.memory_usage(deep=True).sum() / 1e6,
-            'audit_timestamp': datetime.now().isoformat(),
-        }
-    
-    def _audit_quality(self) -> Dict:
-        """Audit data quality issues."""
-        return {
-            'duplicate_rows': {
-                'count': self.df.duplicated().sum(),
-                'percentage': self.df.duplicated().mean() * 100,
-                'status': 'PASS' if self.df.duplicated().mean() < 0.01 else 'WARN'
-            },
-            'constant_columns': [
-                col for col in self.df.columns 
-                if self.df[col].nunique() <= 1
-            ],
-            'high_cardinality': [
-                col for col in self.df.select_dtypes(include=['object']).columns
-                if self.df[col].nunique() > len(self.df) * 0.5
-            ],
-        }
-    
-    def _audit_completeness(self) -> Dict:
-        """Audit data completeness."""
-        completeness = {}
-        
+    def check_missing_values(self, threshold=5.0):
+        """Flag columns with too many missing values."""
         for col in self.df.columns:
-            missing = self.df[col].isna().sum()
-            pct = missing / len(self.df) * 100
-            
-            if pct > 50:
-                status = 'CRITICAL'
-            elif pct > 20:
-                status = 'HIGH'
-            elif pct > 5:
-                status = 'MEDIUM'
-            elif pct > 0:
-                status = 'LOW'
-            else:
-                status = 'PASS'
-            
-            completeness[col] = {
-                'missing_count': missing,
-                'missing_pct': pct,
-                'status': status
-            }
-        
-        return completeness
+            missing_pct = self.df[col].isna().mean() * 100
+            if missing_pct > threshold:
+                self.issues.append({
+                    "type": "missing_values",
+                    "column": col,
+                    "severity": "high" if missing_pct > 20 else "medium",
+                    "detail": f"{missing_pct:.1f}% missing"
+                })
     
-    def _audit_distributions(self) -> Dict:
-        """Audit feature distributions."""
-        distributions = {}
+    def check_class_balance(self, target_column, threshold=10):
+        """Flag class imbalance."""
+        counts = self.df[target_column].value_counts()
+        ratio = counts.max() / counts.min()
         
-        for col in self.df.select_dtypes(include=[np.number]).columns:
-            data = self.df[col].dropna()
-            distributions[col] = {
-                'mean': data.mean(),
-                'std': data.std(),
-                'min': data.min(),
-                'max': data.max(),
-                'skewness': data.skew(),
-                'kurtosis': data.kurtosis(),
-                'has_outliers': self._detect_outliers(data),
-            }
-        
-        return distributions
+        if ratio > threshold:
+            self.issues.append({
+                "type": "class_imbalance",
+                "column": target_column,
+                "severity": "high",
+                "detail": f"Imbalance ratio {ratio:.1f}:1"
+            })
     
-    def _detect_outliers(self, series: pd.Series) -> bool:
-        """Detect outliers using IQR method."""
-        Q1 = series.quantile(0.25)
-        Q3 = series.quantile(0.75)
-        IQR = Q3 - Q1
-        outliers = ((series < Q1 - 1.5 * IQR) | (series > Q3 + 1.5 * IQR)).sum()
-        return outliers > len(series) * 0.01  # More than 1% outliers
+    def check_duplicates(self):
+        """Check for duplicate rows."""
+        dup_count = self.df.duplicated().sum()
+        if dup_count > 0:
+            self.issues.append({
+                "type": "duplicates",
+                "severity": "medium",
+                "detail": f"{dup_count} duplicate rows"
+            })
     
-    def _audit_target_balance(self, target_col: str) -> Dict:
-        """Audit target variable balance."""
-        distribution = self.df[target_col].value_counts()
-        percentages = self.df[target_col].value_counts(normalize=True) * 100
-        
-        imbalance_ratio = distribution.max() / distribution.min()
+    def run_full_audit(self, target_column=None):
+        """Run all audit checks."""
+        self.check_missing_values()
+        self.check_duplicates()
+        if target_column:
+            self.check_class_balance(target_column)
         
         return {
-            'distribution': distribution.to_dict(),
-            'percentages': percentages.to_dict(),
-            'imbalance_ratio': imbalance_ratio,
-            'status': 'CRITICAL' if imbalance_ratio > 100 else 
-                      'HIGH' if imbalance_ratio > 10 else
-                      'MEDIUM' if imbalance_ratio > 3 else 'PASS'
+            "total_issues": len(self.issues),
+            "high_severity": sum(1 for i in self.issues if i["severity"] == "high"),
+            "issues": self.issues
         }
-    
-    def _audit_demographics(self, protected_attrs: List[str], 
-                            target_col: str) -> Dict:
-        """Audit demographic representation and fairness."""
-        results = {}
-        
-        for attr in protected_attrs:
-            if attr not in self.df.columns:
-                continue
-                
-            representation = self.df[attr].value_counts(normalize=True) * 100
-            
-            # Check for underrepresentation
-            underrepresented = [
-                group for group, pct in representation.items() 
-                if pct < 10
-            ]
-            
-            results[attr] = {
-                'representation': representation.to_dict(),
-                'underrepresented_groups': underrepresented,
-                'status': 'WARN' if underrepresented else 'PASS'
-            }
-            
-            # If target column exists, check target rate by group
-            if target_col and target_col in self.df.columns:
-                target_rates = {}
-                for group in self.df[attr].unique():
-                    group_data = self.df[self.df[attr] == group]
-                    rate = group_data[target_col].mean()
-                    target_rates[group] = rate
-                
-                results[attr]['target_rates'] = target_rates
-        
-        return results
-    
-    def _audit_drift(self, reference_data: pd.DataFrame) -> Dict:
-        """Audit for data drift against reference."""
-        from scipy.stats import ks_2samp
-        
-        drift_results = {}
-        
-        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
-        
-        for col in numeric_cols:
-            if col not in reference_data.columns:
-                continue
-            
-            ref = reference_data[col].dropna()
-            cur = self.df[col].dropna()
-            
-            stat, p_value = ks_2samp(ref, cur)
-            
-            drift_results[col] = {
-                'ks_statistic': stat,
-                'p_value': p_value,
-                'drift_detected': p_value < 0.05,
-                'ref_mean': ref.mean(),
-                'cur_mean': cur.mean(),
-            }
-        
-        return drift_results
-    
-    def get_summary(self) -> str:
-        """Generate human-readable audit summary."""
-        if not self.audit_results:
-            return "No audit results. Run run_full_audit() first."
-        
-        summary = f"""
-Dataset Audit Summary: {self.name} v{self.version}
-{'=' * 60}
-
-📊 Size: {self.audit_results['metadata']['n_rows']:,} rows × {self.audit_results['metadata']['n_columns']} columns
-
-🔍 Quality Issues:
-   - Duplicate rows: {self.audit_results['quality']['duplicate_rows']['percentage']:.1f}%
-   - Constant columns: {len(self.audit_results['quality']['constant_columns'])}
-
-📝 Completeness Issues:
-"""
-        critical_missing = [
-            col for col, info in self.audit_results['completeness'].items()
-            if info['status'] in ['CRITICAL', 'HIGH']
-        ]
-        summary += f"   - Columns with >20% missing: {len(critical_missing)}\n"
-        
-        if 'target_balance' in self.audit_results:
-            tb = self.audit_results['target_balance']
-            summary += f"""
-⚖️ Target Balance:
-   - Imbalance ratio: {tb['imbalance_ratio']:.1f}x
-   - Status: {tb['status']}
-"""
-        
-        if 'drift' in self.audit_results:
-            drifted = [
-                col for col, info in self.audit_results['drift'].items()
-                if info['drift_detected']
-            ]
-            summary += f"""
-📈 Data Drift:
-   - Columns with detected drift: {len(drifted)}
-"""
-        
-        return summary
-
-
-# Example usage
-if __name__ == "__main__":
-    # Create sample dataset
-    np.random.seed(42)
-    sample_data = pd.DataFrame({
-        'age': np.random.normal(35, 10, 1000),
-        'income': np.random.exponential(50000, 1000),
-        'gender': np.random.choice(['M', 'F'], 1000, p=[0.7, 0.3]),
-        'approved': np.random.choice([0, 1], 1000, p=[0.8, 0.2]),
-    })
-    
-    # Run audit
-    auditor = DatasetAuditor(sample_data, "loan_applications", "1.0.0")
-    results = auditor.run_full_audit(
-        target_col='approved',
-        protected_attrs=['gender']
-    )
-    
-    print(auditor.get_summary())
 ```
 
 ## Summary
 
-- **Dataset quality directly impacts model quality**—audit before you train
-- **Data profiling** reveals structure, statistics, and potential issues
-- **Class imbalance** can cause models to ignore minority classes
-- **Label quality** affects what the model learns—verify accuracy and consistency
-- **Data drift** degrades model performance—monitor continuously
-- **Version and lineage tracking** ensures reproducibility and auditability
-- **Synthetic data** requires its own validation for fidelity and privacy
-- **Document everything**—clear audit reports enable informed decisions
+- **Dataset audits** identify quality issues before they affect model performance
+- **Data profiling** creates statistical summaries of dataset characteristics
+- **Class/demographic imbalance** can cause biased or poorly-calibrated models
+- **Label quality** directly affects what the model learns
+- **Data drift** detection catches when production differs from training
+- **Versioning** enables reproducibility and debugging
+- **Synthetic data** has risks—validate against real data
+- **Documentation** makes audit findings actionable
 
 ## Additional Resources
 
-- [Great Expectations - Data Quality](https://greatexpectations.io/)
-- [Evidently AI - ML Monitoring](https://www.evidentlyai.com/)
-- [Data Version Control (DVC)](https://dvc.org/)
-
+- [Data Quality for Machine Learning (O'Reilly)](https://www.oreilly.com/library/view/data-quality-fundamentals/9781098112035/) - Book on data quality
+- [Great Expectations](https://greatexpectations.io/) - Data validation framework
+- [Pandas Profiling](https://github.com/ydataai/ydata-profiling) - Automated data profiling
